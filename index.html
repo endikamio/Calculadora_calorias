@@ -1,0 +1,391 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#080d14">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="Calorias">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <title>Calculadora de calorias y CrossFit</title>
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="icon" href="icon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="icon.svg">
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <main class="mobile-app">
+      <header class="app-header">
+        <div>
+          <p class="eyebrow">Diario nutricional</p>
+          <h1 id="app-title">Calorias & CrossFit</h1>
+        </div>
+        <label class="date-picker">
+          <span>Dia</span>
+          <input id="entry-date" type="date">
+        </label>
+      </header>
+
+      <section id="screen-home" class="screen is-active" aria-labelledby="home-title">
+        <div class="screen-heading">
+          <div>
+            <h2 id="home-title">Home</h2>
+            <p>Resumen diario, macros y estadistica semanal.</p>
+          </div>
+          <button id="clear-day" class="ghost-button" type="button" title="Borrar el dia actual">Limpiar dia</button>
+        </div>
+
+        <section class="summary-panel" aria-labelledby="app-title">
+          <div class="score-grid">
+            <article class="score-card">
+              <span>Consumidas</span>
+              <strong id="total-calories">0</strong>
+              <small>kcal</small>
+            </article>
+            <article class="score-card burn">
+              <span>Quemadas</span>
+              <strong id="total-burned">0</strong>
+              <small>kcal</small>
+            </article>
+            <article class="score-card net">
+              <span>Neto</span>
+              <strong id="net-calories">0</strong>
+              <small>kcal</small>
+            </article>
+          </div>
+
+          <div class="visual-summary">
+            <div class="donut-card">
+              <svg class="donut-chart" viewBox="0 0 42 42" role="img" aria-label="Grafico circular del dia">
+                <circle class="donut-bg" cx="21" cy="21" r="15.915"></circle>
+                <circle id="donut-consumed" class="donut-slice consumed" cx="21" cy="21" r="15.915"></circle>
+                <circle id="donut-burned" class="donut-slice burned" cx="21" cy="21" r="15.915"></circle>
+                <circle id="donut-net" class="donut-slice net-slice" cx="21" cy="21" r="15.915"></circle>
+                <text id="donut-center-value" x="21" y="20" text-anchor="middle">0</text>
+                <text x="21" y="25" text-anchor="middle">kcal netas</text>
+              </svg>
+              <div class="chart-legend">
+                <span><i class="legend-consumed"></i>Consumidas</span>
+                <span><i class="legend-burned"></i>Quemadas</span>
+                <span><i class="legend-net"></i>Neto</span>
+              </div>
+            </div>
+
+            <div class="goal-card">
+              <div class="progress-block">
+                <div class="progress-label">
+                  <span>Consecucion de calorias</span>
+                  <strong id="remaining-calories">0 kcal restantes</strong>
+                </div>
+                <div class="progress-track large-track">
+                  <div id="calorie-progress" class="progress-fill"></div>
+                </div>
+                <div class="goal-scale">
+                  <span>0</span>
+                  <span id="goal-scale-value">2400 kcal</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="macro-grid">
+            <div>
+              <span>Proteinas</span>
+              <strong id="protein-total">0 g</strong>
+            </div>
+            <div>
+              <span>Carbohidratos</span>
+              <strong id="carbs-total">0 g</strong>
+            </div>
+            <div>
+              <span>Grasas</span>
+              <strong id="fat-total">0 g</strong>
+            </div>
+          </div>
+        </section>
+
+        <div class="quick-actions">
+          <button class="nav-shortcut" type="button" data-target="food">Anadir comida</button>
+          <button class="nav-shortcut secondary-button" type="button" data-target="workout">Subir entreno</button>
+        </div>
+
+        <section class="log-panel">
+          <div class="section-heading">
+            <h2>Informe</h2>
+            <span id="report-range" class="muted">Ultimos 7 dias</span>
+          </div>
+          <div class="report-grid">
+            <article>
+              <span>Deficit</span>
+              <strong id="week-deficit-days">0 dias</strong>
+            </article>
+            <article>
+              <span>Por encima</span>
+              <strong id="week-surplus-days">0 dias</strong>
+            </article>
+            <article>
+              <span>Neto medio</span>
+              <strong id="week-average-net">0 kcal</strong>
+            </article>
+            <article>
+              <span>Balance semana</span>
+              <strong id="week-balance">0 kcal</strong>
+            </article>
+          </div>
+          <div id="weekly-bar-chart" class="bar-chart" aria-label="Grafico de barras semanal"></div>
+          <ol id="daily-report" class="report-list"></ol>
+        </section>
+
+        <section class="log-panel">
+          <div class="section-heading">
+            <h2>Hoy</h2>
+            <span id="entry-count" class="muted">0 registros</span>
+          </div>
+          <div class="log-columns">
+            <div>
+              <h3>Comidas</h3>
+              <ul id="food-log" class="entry-list"></ul>
+            </div>
+            <div>
+              <h3>Entrenos</h3>
+              <ul id="workout-log" class="entry-list"></ul>
+            </div>
+          </div>
+        </section>
+      </section>
+
+      <section id="screen-food" class="screen" aria-labelledby="food-title">
+        <div class="screen-heading">
+          <div>
+            <h2 id="food-title">Comidas</h2>
+            <p>Registro diario con calorias, proteinas, carbohidratos y grasas.</p>
+          </div>
+        </div>
+
+        <div class="input-panel">
+          <form id="quick-food-form" class="quick-form">
+            <label>
+              <span>Entrada rapida</span>
+              <input id="quick-food" type="text" autocomplete="off" placeholder="Ej: 200g pollo, 100g arroz, 1 platano">
+            </label>
+            <button type="submit">Calcular</button>
+          </form>
+
+          <form id="food-form" class="entry-form">
+            <label>
+              <span>Alimento</span>
+              <input id="food-name" type="text" list="food-list" autocomplete="off" placeholder="Pollo, arroz, huevo...">
+              <datalist id="food-list"></datalist>
+            </label>
+            <label>
+              <span>Cantidad</span>
+              <input id="food-grams" type="number" min="1" step="1" value="100">
+            </label>
+            <label>
+              <span>Calorias</span>
+              <input id="food-calories" type="number" min="0" step="1">
+            </label>
+            <label>
+              <span>Proteinas (g)</span>
+              <input id="food-protein" type="number" min="0" step="0.1">
+            </label>
+            <label>
+              <span>Carbos (g)</span>
+              <input id="food-carbs" type="number" min="0" step="0.1">
+            </label>
+            <label>
+              <span>Grasas (g)</span>
+              <input id="food-fat" type="number" min="0" step="0.1">
+            </label>
+            <button type="submit">Anadir comida</button>
+          </form>
+        </div>
+
+        <section class="log-panel">
+          <div class="section-heading">
+            <h2>Comidas del dia</h2>
+            <span class="muted">Guardado automatico</span>
+          </div>
+          <ul id="food-screen-log" class="entry-list"></ul>
+        </section>
+      </section>
+
+      <section id="screen-workout" class="screen" aria-labelledby="workout-title">
+        <div class="screen-heading">
+          <div>
+            <h2 id="workout-title">Entrenamiento</h2>
+            <p>Sube captura, describe el entreno y ajusta la percepcion del esfuerzo.</p>
+          </div>
+        </div>
+
+        <div class="input-panel">
+          <form id="workout-form" class="entry-form workout-form">
+            <label>
+              <span>Captura del entrenamiento</span>
+              <input id="workout-image" type="file" accept="image/*">
+            </label>
+            <label>
+              <span>Deporte</span>
+              <select id="workout-sport">
+                <option value="crossfit">CrossFit</option>
+                <option value="strength">Fuerza / pesas</option>
+                <option value="running">Running</option>
+                <option value="cycling">Bici</option>
+                <option value="swimming">Natacion</option>
+                <option value="walking">Caminar</option>
+                <option value="football">Futbol</option>
+                <option value="padel">Padel / tenis</option>
+                <option value="other">Otro</option>
+              </select>
+            </label>
+            <label>
+              <span>Esfuerzo percibido</span>
+              <input id="workout-effort" type="range" min="1" max="10" step="1" value="7">
+              <strong id="workout-effort-label" class="range-value">RPE 7/10</strong>
+            </label>
+            <label>
+              <span>Duracion (min)</span>
+              <input id="workout-minutes" type="number" min="1" step="1" value="45">
+            </label>
+            <label>
+              <span>Calorias quemadas</span>
+              <input id="workout-calories" type="number" min="0" step="1">
+            </label>
+            <label class="wide-field">
+              <span>Entrenamiento / texto libre</span>
+              <textarea id="workout-notes" rows="4" placeholder="Ej: 5 rondas de 400m run, 20 wall balls, 15 toes to bar. Me costo bastante."></textarea>
+            </label>
+            <button id="image-only-workout" class="secondary-button" type="button">Estimar con captura/texto</button>
+            <div id="workout-preview" class="image-preview" aria-live="polite"></div>
+            <button type="submit">Anadir entrenamiento</button>
+          </form>
+        </div>
+
+        <section class="log-panel">
+          <div class="section-heading">
+            <h2>Entrenos del dia</h2>
+            <span class="muted">CrossFit, cardio y fuerza</span>
+          </div>
+          <ul id="workout-screen-log" class="entry-list"></ul>
+        </section>
+      </section>
+
+      <section id="screen-profile" class="screen" aria-labelledby="profile-title">
+        <div class="screen-heading">
+          <div>
+            <h2 id="profile-title">Perfil</h2>
+            <p>Datos personales para mejorar estimaciones y objetivos.</p>
+          </div>
+        </div>
+
+        <div class="input-panel">
+          <form id="profile-form" class="entry-form profile-form">
+            <label>
+              <span>Calorias objetivo</span>
+              <input id="goal-calories" type="number" min="0" step="50" value="2400">
+            </label>
+            <label>
+              <span>Proteina objetivo</span>
+              <input id="goal-protein" type="number" min="0" step="5" value="160">
+            </label>
+            <label>
+              <span>Altura actual (cm)</span>
+              <input id="body-height" type="number" min="120" step="1" value="175">
+            </label>
+            <label>
+              <span>Peso actual (kg)</span>
+              <input id="body-weight" type="number" min="30" step="0.5" value="75">
+            </label>
+            <label>
+              <span>Sexo</span>
+              <select id="profile-sex">
+                <option value="">Sin especificar</option>
+                <option value="male">Hombre</option>
+                <option value="female">Mujer</option>
+                <option value="other">Otro</option>
+              </select>
+            </label>
+            <label>
+              <span>Grasa corporal (%)</span>
+              <input id="body-fat" type="number" min="3" max="60" step="0.1" placeholder="Ej: 18">
+            </label>
+            <label>
+              <span>Habitos de trabajo</span>
+              <select id="work-habits">
+                <option value="sedentary">Sentado casi todo el dia</option>
+                <option value="mixed">Me muevo algo</option>
+                <option value="active">Trabajo activo</option>
+                <option value="physical">Trabajo fisico exigente</option>
+              </select>
+            </label>
+            <label>
+              <span>Objetivo</span>
+              <select id="body-goal">
+                <option value="fat_loss">Perder grasa</option>
+                <option value="maintenance">Mantener</option>
+                <option value="performance">Rendir mejor</option>
+                <option value="muscle_gain">Ganar musculo</option>
+              </select>
+            </label>
+          </form>
+        </div>
+
+        <section class="log-panel">
+          <div class="section-heading">
+            <h2>Resumen personal</h2>
+            <span class="muted">Se guarda solo</span>
+          </div>
+          <div class="profile-summary">
+            <article>
+              <span>Peso</span>
+              <strong id="profile-weight-summary">75 kg</strong>
+            </article>
+            <article>
+              <span>Altura</span>
+              <strong id="profile-height-summary">175 cm</strong>
+            </article>
+            <article>
+              <span>Grasa</span>
+              <strong id="profile-fat-summary">Sin dato</strong>
+            </article>
+            <article>
+              <span>Trabajo</span>
+              <strong id="profile-work-summary">Sentado</strong>
+            </article>
+          </div>
+        </section>
+      </section>
+
+      <nav class="bottom-nav" aria-label="Navegacion principal">
+        <button class="nav-button is-active" type="button" data-screen="home" aria-label="Home">
+          <span>⌂</span>
+          Home
+        </button>
+        <button class="nav-button" type="button" data-screen="food" aria-label="Comidas">
+          <span>◷</span>
+          Comidas
+        </button>
+        <button class="nav-button" type="button" data-screen="workout" aria-label="Entrenamiento">
+          <span>▣</span>
+          Entreno
+        </button>
+        <button class="nav-button" type="button" data-screen="profile" aria-label="Perfil">
+          <span>○</span>
+          Perfil
+        </button>
+      </nav>
+    </main>
+
+    <template id="entry-template">
+      <li class="entry-item">
+        <div>
+          <strong class="entry-title"></strong>
+          <span class="entry-meta"></span>
+        </div>
+        <button class="delete-button" type="button" aria-label="Eliminar registro">x</button>
+      </li>
+    </template>
+
+    <script src="app.js"></script>
+  </body>
+</html>
