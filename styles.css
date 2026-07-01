@@ -486,6 +486,43 @@ button:hover {
   margin-bottom: 4px;
 }
 
+.food-preview {
+  display: none;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.food-preview.is-visible {
+  display: grid;
+}
+
+.preview-item,
+.preview-total {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+}
+
+.preview-item span,
+.preview-total span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.preview-total {
+  border-color: rgba(55, 217, 158, 0.36);
+}
+
+.preview-confirm {
+  margin-top: 8px;
+}
+
 .ocr-status {
   grid-column: 1 / -1;
   margin: 0;

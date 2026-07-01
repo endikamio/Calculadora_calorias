@@ -166,10 +166,12 @@
           <form id="quick-food-form" class="quick-form">
             <label>
               <span>Entrada rapida</span>
-              <input id="quick-food" type="text" autocomplete="off" placeholder="Ej: 200g pollo, 100g arroz, 1 platano">
+              <input id="quick-food" type="text" autocomplete="off" placeholder="Ej: salmon 180g con 250g boniato y salsa de soja">
             </label>
-            <button type="submit">Calcular</button>
+            <button type="submit">Interpretar</button>
           </form>
+          <div id="food-preview" class="food-preview" aria-live="polite"></div>
+          <button id="confirm-food-preview" class="secondary-button preview-confirm" type="button" hidden>Anadir desglose</button>
 
           <form id="food-form" class="entry-form">
             <label>

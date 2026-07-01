@@ -2,20 +2,22 @@ const foodDatabase = [
   { name: "pollo", aliases: ["pechuga", "pechuga de pollo"], calories: 165, protein: 31, carbs: 0, fat: 3.6 },
   { name: "arroz cocido", aliases: ["arroz"], calories: 130, protein: 2.7, carbs: 28, fat: 0.3 },
   { name: "pasta cocida", aliases: ["pasta", "macarrones"], calories: 158, protein: 5.8, carbs: 31, fat: 0.9 },
-  { name: "huevo", aliases: ["huevos"], calories: 143, protein: 12.6, carbs: 0.7, fat: 9.5 },
+  { name: "huevo", aliases: ["huevos"], calories: 143, protein: 12.6, carbs: 0.7, fat: 9.5, unitGrams: 60 },
   { name: "atun", aliases: ["atun al natural"], calories: 116, protein: 26, carbs: 0, fat: 1 },
   { name: "salmon", aliases: ["salmon"], calories: 208, protein: 20, carbs: 0, fat: 13 },
   { name: "ternera", aliases: ["carne", "carne picada"], calories: 250, protein: 26, carbs: 0, fat: 15 },
   { name: "avena", aliases: ["copos de avena"], calories: 389, protein: 16.9, carbs: 66, fat: 6.9 },
   { name: "pan", aliases: ["pan blanco", "pan integral"], calories: 265, protein: 9, carbs: 49, fat: 3.2 },
-  { name: "patata cocida", aliases: ["patata", "papa"], calories: 87, protein: 1.9, carbs: 20, fat: 0.1 },
-  { name: "boniato", aliases: ["batata"], calories: 86, protein: 1.6, carbs: 20, fat: 0.1 },
-  { name: "platano", aliases: ["banana"], calories: 89, protein: 1.1, carbs: 23, fat: 0.3 },
-  { name: "manzana", aliases: ["manzana"], calories: 52, protein: 0.3, carbs: 14, fat: 0.2 },
+  { name: "patata cocida", aliases: ["patata", "patatas", "papa", "papas"], calories: 87, protein: 1.9, carbs: 20, fat: 0.1, unitGrams: 180 },
+  { name: "boniato", aliases: ["batata", "boniatos"], calories: 86, protein: 1.6, carbs: 20, fat: 0.1, unitGrams: 220 },
+  { name: "platano", aliases: ["banana", "platanos"], calories: 89, protein: 1.1, carbs: 23, fat: 0.3, unitGrams: 120 },
+  { name: "manzana", aliases: ["manzana", "manzanas"], calories: 52, protein: 0.3, carbs: 14, fat: 0.2, unitGrams: 180 },
   { name: "yogur griego", aliases: ["yogur", "yogurt griego"], calories: 97, protein: 9, carbs: 3.6, fat: 5 },
   { name: "leche", aliases: ["leche entera"], calories: 61, protein: 3.2, carbs: 4.8, fat: 3.3 },
-  { name: "aceite de oliva", aliases: ["aceite"], calories: 884, protein: 0, carbs: 0, fat: 100 },
-  { name: "aguacate", aliases: ["avocado"], calories: 160, protein: 2, carbs: 8.5, fat: 14.7 },
+  { name: "aceite de oliva", aliases: ["aceite"], calories: 884, protein: 0, carbs: 0, fat: 100, spoonGrams: 10 },
+  { name: "salsa de soja", aliases: ["soja", "salsa soja", "soy sauce"], calories: 53, protein: 8, carbs: 4.9, fat: 0.6, spoonGrams: 15 },
+  { name: "cebolla", aliases: ["cebolla", "cebollas"], calories: 40, protein: 1.1, carbs: 9.3, fat: 0.1, unitGrams: 150 },
+  { name: "aguacate", aliases: ["avocado"], calories: 160, protein: 2, carbs: 8.5, fat: 14.7, unitGrams: 150 },
   { name: "brocoli", aliases: ["brocoli"], calories: 35, protein: 2.4, carbs: 7.2, fat: 0.4 },
   { name: "lentejas cocidas", aliases: ["lentejas"], calories: 116, protein: 9, carbs: 20, fat: 0.4 },
   { name: "garbanzos cocidos", aliases: ["garbanzos"], calories: 164, protein: 8.9, carbs: 27, fat: 2.6 }
@@ -48,6 +50,7 @@ const state = {
   workouts: [],
   selectedWorkoutImage: null,
   workoutOcrText: "",
+  pendingFoods: [],
   activeScreen: "home"
 };
 
@@ -72,6 +75,8 @@ const fields = {
   foodProtein: $("#food-protein"),
   foodCarbs: $("#food-carbs"),
   foodFat: $("#food-fat"),
+  foodPreview: $("#food-preview"),
+  confirmFoodPreview: $("#confirm-food-preview"),
   workoutSport: $("#workout-sport"),
   workoutEffort: $("#workout-effort"),
   workoutEffortLabel: $("#workout-effort-label"),
@@ -171,19 +176,118 @@ function scaleFood(food, grams, displayName = food.name) {
   };
 }
 
-function parseQuickFood(text) {
-  const chunks = text.split(/,| y /i).map((chunk) => chunk.trim()).filter(Boolean);
-  return chunks.map((chunk) => {
-    const amountMatch = chunk.match(/(\d+(?:[.,]\d+)?)\s*(g|gr|gramos|kg|unidad|unidades|u)?/i);
-    const rawAmount = amountMatch ? Number(amountMatch[1].replace(",", ".")) : 100;
-    const unit = amountMatch?.[2]?.toLowerCase() || "";
-    const grams = unit === "kg" ? rawAmount * 1000 : unit.startsWith("u") || (!unit && rawAmount <= 10) ? rawAmount * 100 : rawAmount;
-    const name = chunk.replace(amountMatch?.[0] || "", "").trim() || chunk;
-    const food = findFood(name);
+const numberWords = {
+  un: 1,
+  una: 1,
+  uno: 1,
+  dos: 2,
+  tres: 3,
+  cuatro: 4,
+  cinco: 5,
+  seis: 6,
+  siete: 7,
+  ocho: 8,
+  nueve: 9,
+  diez: 10
+};
 
+function parseAmount(chunk, food) {
+  const normalized = normalizeText(chunk);
+  const wordPattern = Object.keys(numberWords).join("|");
+  const amountMatch = normalized.match(new RegExp(`(\\d+(?:[.,]\\d+)?|${wordPattern})\\s*(kg|g|gr|gramos|cucharada|cucharadas|cda|cdas|unidad|unidades|u)?`));
+  if (!amountMatch) return food.spoonGrams || food.unitGrams || 100;
+
+  const rawToken = amountMatch[1].replace(",", ".");
+  const amount = numberWords[rawToken] || Number(rawToken);
+  const unit = amountMatch[2] || "";
+
+  if (unit === "kg") return amount * 1000;
+  if (["g", "gr", "gramos"].includes(unit)) return amount;
+  if (["cucharada", "cucharadas", "cda", "cdas"].includes(unit)) return amount * (food.spoonGrams || 15);
+  if (["unidad", "unidades", "u"].includes(unit)) return amount * (food.unitGrams || 100);
+  if (amount <= 10) return amount * (food.unitGrams || 100);
+  return amount;
+}
+
+function splitFoodText(text) {
+  return normalizeText(text)
+    .replace(/\btortilla de patatas?\b/g, "")
+    .split(/,|\+|\bcon\b|\by\b/)
+    .map((chunk) => chunk.trim())
+    .filter(Boolean);
+}
+
+function parseQuickFood(text) {
+  const chunks = splitFoodText(text);
+  return chunks.map((chunk) => {
+    const food = findFood(chunk);
     if (!food) return null;
-    return scaleFood(food, grams, food.name);
+    const grams = parseAmount(chunk, food);
+    const name = food.name;
+    return scaleFood(food, grams, name);
   }).filter(Boolean);
+}
+
+function foodTotals(entries) {
+  return {
+    calories: entries.reduce((sum, item) => sum + item.calories, 0),
+    protein: entries.reduce((sum, item) => sum + item.protein, 0),
+    carbs: entries.reduce((sum, item) => sum + item.carbs, 0),
+    fat: entries.reduce((sum, item) => sum + item.fat, 0)
+  };
+}
+
+function renderFoodPreview(entries) {
+  fields.foodPreview.innerHTML = "";
+  fields.foodPreview.classList.toggle("is-visible", Boolean(entries.length));
+  fields.confirmFoodPreview.hidden = !entries.length;
+
+  entries.forEach((entry) => {
+    const item = document.createElement("div");
+    item.className = "preview-item";
+    item.innerHTML = `
+      <div>
+        <strong>${entry.name}</strong>
+        <span>${entry.grams} g · P ${entry.protein} g · C ${entry.carbs} g · G ${entry.fat} g</span>
+      </div>
+      <strong>${entry.calories} kcal</strong>
+    `;
+    fields.foodPreview.append(item);
+  });
+
+  if (!entries.length) return;
+  const totals = foodTotals(entries);
+  const total = document.createElement("div");
+  total.className = "preview-total";
+  total.innerHTML = `
+    <div>
+      <strong>Total detectado</strong>
+      <span>P ${round(totals.protein, 1)} g · C ${round(totals.carbs, 1)} g · G ${round(totals.fat, 1)} g</span>
+    </div>
+    <strong>${round(totals.calories)} kcal</strong>
+  `;
+  fields.foodPreview.append(total);
+}
+
+function clearFoodPreview() {
+  state.pendingFoods = [];
+  renderFoodPreview([]);
+}
+
+function previewQuickFood(text) {
+  const entries = parseQuickFood(text);
+  state.pendingFoods = entries;
+  renderFoodPreview(entries);
+  return entries;
+}
+
+function confirmFoodPreview() {
+  if (!state.pendingFoods.length) return;
+  state.foods.push(...state.pendingFoods);
+  fields.quickFood.value = "";
+  clearFoodPreview();
+  saveDay();
+  render();
 }
 
 function fillFoodFields() {
@@ -660,19 +764,16 @@ function populateFoodList() {
 
 $("#quick-food-form").addEventListener("submit", (event) => {
   event.preventDefault();
-  const entries = parseQuickFood(fields.quickFood.value);
+  const entries = previewQuickFood(fields.quickFood.value);
   if (!entries.length) {
     fields.quickFood.setCustomValidity("No he reconocido ningun alimento de la base.");
     fields.quickFood.reportValidity();
     fields.quickFood.setCustomValidity("");
     return;
   }
-
-  state.foods.push(...entries);
-  fields.quickFood.value = "";
-  saveDay();
-  render();
 });
+
+fields.confirmFoodPreview.addEventListener("click", confirmFoodPreview);
 
 $("#food-form").addEventListener("submit", (event) => {
   event.preventDefault();
