@@ -50,6 +50,7 @@ const state = {
   workouts: [],
   selectedWorkoutImage: null,
   workoutOcrText: "",
+  pendingWorkoutBlocks: [],
   pendingFoods: [],
   activeScreen: "home"
 };
@@ -84,7 +85,9 @@ const fields = {
   workoutCalories: $("#workout-calories"),
   workoutImage: $("#workout-image"),
   workoutNotes: $("#workout-notes"),
-  ocrStatus: $("#ocr-status")
+  ocrStatus: $("#ocr-status"),
+  workoutBlockPreview: $("#workout-block-preview"),
+  confirmWorkoutPreview: $("#confirm-workout-preview")
 };
 
 function todayIso() {
@@ -368,6 +371,203 @@ function inferEffortFromText(text, sport) {
   return Number(fields.workoutEffort.value) || 7;
 }
 
+function blockMet(block) {
+  if (block.kind === "strength-high") return 7;
+  if (block.kind === "strength") return 5.5;
+  if (block.kind === "metcon") return 10;
+  if (block.kind === "cardio") return 8;
+  return 6;
+}
+
+function caloriesForBlock(block) {
+  const minutes = Number(block.actualMinutes || block.minutes) || 0;
+  const effort = Number(block.effort) || 7;
+  const effortFactor = 0.65 + effort * 0.07;
+  return round(blockMet(block) * effortFactor * 3.5 * bodyWeight() / 200 * minutes);
+}
+
+function detectWorkoutBlocks(text) {
+  const normalized = normalizeText(text).replace(/[“”]/g, "\"");
+  const blocks = [];
+  const strengthHints = /(clean|snatch|deadlift|squat|bench|press|jerk|hip thrust|front plank|curl|extension|sled|prowler|sandbag)/;
+  const highStrength = /(rpe\s*(8|9|10)|8[5-9](?:\.\d+)?%|9\d(?:\.\d+)?%|90\+%|max load)/;
+
+  const everyMatches = [...normalized.matchAll(/every\s+(\d+)(?::(\d{2}))?\s*(?:minutes?|minute|min)?(?:,\s*)?for\s+(\d+)(?::(\d{2}))?\s*(?:minutes?|minute|min)?/g)];
+  everyMatches.forEach((match, index) => {
+    const minutes = Number(match[3]) + (match[4] ? Number(match[4]) / 60 : 0);
+    const snippet = normalized.slice(Math.max(0, match.index - 80), match.index + 220);
+    const isStrength = strengthHints.test(snippet);
+    blocks.push({
+      id: crypto.randomUUID(),
+      title: `Bloque ${String.fromCharCode(65 + index)} · Every ${match[1]}${match[2] ? `:${match[2]}` : ""}`,
+      kind: isStrength ? (highStrength.test(snippet) ? "strength-high" : "strength") : "metcon",
+      minutes,
+      effort: isStrength ? (highStrength.test(snippet) ? 8 : 6) : 8,
+      scale: /escalado/.test(snippet) ? "scaled" : "rx",
+      needsTime: false
+    });
+  });
+
+  const emomMatches = [...normalized.matchAll(/every minute for\s+(\d{1,3})\s*(?:minutes?|minute|min)?|emom\s+(\d{1,3})/g)];
+  emomMatches.forEach((match) => {
+    const minutes = Number(match[1] || match[2]);
+    blocks.push({
+      id: crypto.randomUUID(),
+      title: "EMOM",
+      kind: "metcon",
+      minutes,
+      effort: 8,
+      scale: /escalado/.test(normalized.slice(match.index, match.index + 220)) ? "scaled" : "rx",
+      needsTime: false
+    });
+  });
+
+  const amrapMatches = [...normalized.matchAll(/amrap\s*(\d{1,3})\s*'?/g)];
+  amrapMatches.forEach((match) => {
+    blocks.push({
+      id: crypto.randomUUID(),
+      title: `AMRAP ${match[1]}'`,
+      kind: "metcon",
+      minutes: Number(match[1]),
+      effort: 8,
+      scale: /escalado/.test(normalized.slice(match.index, match.index + 260)) ? "scaled" : "rx",
+      needsTime: false
+    });
+  });
+
+  const intervalMatches = [...normalized.matchAll(/(\d+)\s*x\s*(\d+)\s*'/g)];
+  intervalMatches.forEach((match) => {
+    blocks.push({
+      id: crypto.randomUUID(),
+      title: `${match[1]} x ${match[2]}'`,
+      kind: "metcon",
+      minutes: Number(match[1]) * Number(match[2]),
+      effort: 8,
+      scale: "rx",
+      needsTime: false
+    });
+  });
+
+  [...normalized.matchAll(/(\d+)\s+rounds?\s+for\s+time|for\s+time/g)].forEach((match) => {
+    const snippet = normalized.slice(match.index, match.index + 360);
+    const cap = snippet.match(/time cap:?\s*(\d{1,3})\s*(?:minutes?|minute|min)?|cap:?\s*(\d{1,3})/);
+    blocks.push({
+      id: crypto.randomUUID(),
+      title: match[1] ? `${match[1]} rounds for time` : "For time",
+      kind: "metcon",
+      minutes: cap ? Number(cap[1] || cap[2]) : "",
+      effort: 9,
+      scale: /escalado/.test(snippet) ? "scaled" : "rx",
+      needsTime: true
+    });
+  });
+
+  return blocks.filter((block, index, list) =>
+    list.findIndex((candidate) => candidate.title === block.title && candidate.minutes === block.minutes) === index
+  );
+}
+
+function renderWorkoutBlockPreview(blocks) {
+  fields.workoutBlockPreview.innerHTML = "";
+  fields.workoutBlockPreview.classList.toggle("is-visible", Boolean(blocks.length));
+  fields.confirmWorkoutPreview.hidden = !blocks.length;
+
+  blocks.forEach((block, index) => {
+    const item = document.createElement("div");
+    item.className = "workout-block";
+    item.dataset.id = block.id;
+    item.innerHTML = `
+      <div>
+        <strong>${block.title}</strong>
+        <span>${block.kind.replace("-", " ")} · ${block.needsTime ? "mete tu tiempo o uso cap" : `${round(block.minutes, 1)} min`} · ${caloriesForBlock(block)} kcal</span>
+      </div>
+      <div class="workout-block-controls">
+        <label>
+          <span>Tipo</span>
+          <select data-field="kind">
+            <option value="strength">Fuerza</option>
+            <option value="strength-high">Fuerza alta</option>
+            <option value="metcon">Metcon</option>
+            <option value="cardio">Cardio</option>
+          </select>
+        </label>
+        <label>
+          <span>Escala</span>
+          <select data-field="scale">
+            <option value="rx">RX</option>
+            <option value="scaled">Escalado</option>
+          </select>
+        </label>
+        <label>
+          <span>${block.needsTime ? "Tiempo real/cap" : "Minutos"}</span>
+          <input data-field="minutes" type="number" min="1" step="0.5" value="${block.minutes || ""}" placeholder="${block.needsTime ? "Tiempo" : "Min"}">
+        </label>
+        <label>
+          <span>RPE</span>
+          <input data-field="effort" type="number" min="1" max="10" step="1" value="${block.effort}">
+        </label>
+      </div>
+    `;
+    item.querySelector('[data-field="kind"]').value = block.kind;
+    item.querySelector('[data-field="scale"]').value = block.scale;
+    item.querySelectorAll("input, select").forEach((control) => {
+      control.addEventListener("change", () => updateWorkoutBlock(index, control.dataset.field, control.value));
+    });
+    fields.workoutBlockPreview.append(item);
+  });
+
+  const total = document.createElement("div");
+  total.className = "preview-total";
+  total.innerHTML = `
+    <div>
+      <strong>Total clase detectada</strong>
+      <span>${round(blocks.reduce((sum, block) => sum + (Number(block.actualMinutes || block.minutes) || 0), 0), 1)} min · ${blocks.length} bloques</span>
+    </div>
+    <strong>${blocks.reduce((sum, block) => sum + caloriesForBlock(block), 0)} kcal</strong>
+  `;
+  fields.workoutBlockPreview.append(total);
+}
+
+function updateWorkoutBlock(index, field, value) {
+  const block = state.pendingWorkoutBlocks[index];
+  if (!block) return;
+  if (field === "minutes") block.minutes = Number(value) || "";
+  else if (field === "effort") block.effort = Number(value) || 7;
+  else block[field] = value;
+  renderWorkoutBlockPreview(state.pendingWorkoutBlocks);
+}
+
+function confirmWorkoutPreview() {
+  const validBlocks = state.pendingWorkoutBlocks.filter((block) => Number(block.minutes) > 0);
+  if (!validBlocks.length) {
+    fields.ocrStatus.textContent = "Falta tiempo en los bloques detectados.";
+    return;
+  }
+
+  const minutes = validBlocks.reduce((sum, block) => sum + Number(block.minutes), 0);
+  const calories = validBlocks.reduce((sum, block) => sum + caloriesForBlock(block), 0);
+  const notes = validBlocks.map((block) => `${block.title}: ${round(block.minutes, 1)} min, ${block.kind}, ${block.scale}, RPE ${block.effort}`).join(" | ");
+
+  state.workouts.push({
+    id: crypto.randomUUID(),
+    name: "Clase CrossFit detectada",
+    sport: "CrossFit",
+    effort: round(validBlocks.reduce((sum, block) => sum + Number(block.effort), 0) / validBlocks.length),
+    minutes: round(minutes, 1),
+    calories: round(calories),
+    imageName: state.selectedWorkoutImage?.name || "",
+    notes
+  });
+  state.pendingWorkoutBlocks = [];
+  fields.workoutBlockPreview.innerHTML = "";
+  fields.workoutBlockPreview.classList.remove("is-visible");
+  fields.confirmWorkoutPreview.hidden = true;
+  fields.workoutNotes.value = "";
+  clearWorkoutImage();
+  saveDay();
+  render();
+}
+
 function applyWorkoutTextInference(text) {
   const sport = inferSportFromText(text);
   const duration = inferDurationFromText(text);
@@ -450,18 +650,13 @@ async function estimateWorkoutFromImageOnly() {
     return;
   }
 
+  let combinedText = fields.workoutNotes.value.trim();
   if (state.selectedWorkoutImage) {
     try {
       const text = await readWorkoutImageText();
       if (text) {
-        const combinedText = [fields.workoutNotes.value.trim(), text].filter(Boolean).join("\n\n");
+        combinedText = [fields.workoutNotes.value.trim(), text].filter(Boolean).join("\n\n");
         fields.workoutNotes.value = combinedText;
-        const inference = applyWorkoutTextInference(combinedText);
-        if (!inference.ok) {
-          fields.ocrStatus.textContent = "He leido la captura, pero no he detectado una duracion. Escribe el tiempo en el texto o rellena Duracion manualmente.";
-          return;
-        }
-        fields.ocrStatus.textContent = "Captura leida. He usado solo los datos detectados en la captura/texto.";
       } else {
         fields.ocrStatus.textContent = "No he podido leer texto claro en la captura. No hago estimacion automatica sin duracion detectada.";
         return;
@@ -470,18 +665,22 @@ async function estimateWorkoutFromImageOnly() {
       fields.ocrStatus.textContent = "No he podido leer la captura. No hago estimacion automatica sin texto detectable.";
       return;
     }
-  } else if (hasText) {
-    const inference = applyWorkoutTextInference(fields.workoutNotes.value);
-    if (!inference.ok) {
-      fields.ocrStatus.textContent = "No he detectado duracion en el texto. Escribe algo como '45 min', 'AMRAP 20' o '32:15'.";
-      return;
-    }
-    fields.ocrStatus.textContent = "Texto analizado. He usado el tiempo detectado en el texto.";
   }
 
-  fields.workoutNotes.value = fields.workoutNotes.value.trim() || "Estimacion automatica desde captura/texto libre.";
-  addWorkout();
-  fields.workoutNotes.value = "";
+  const blocks = detectWorkoutBlocks(combinedText);
+  if (blocks.length) {
+    state.pendingWorkoutBlocks = blocks;
+    renderWorkoutBlockPreview(blocks);
+    fields.ocrStatus.textContent = "He detectado bloques de clase. Revisa RX/escalado y mete tu tiempo real en los bloques For Time si lo tienes.";
+    return;
+  }
+
+  const inference = applyWorkoutTextInference(combinedText);
+  if (!inference.ok) {
+    fields.ocrStatus.textContent = "No he detectado bloques ni duracion. Escribe algo como '45 min', 'AMRAP 20', 'Every 2:30 for 12:30' o 'Time Cap 22'.";
+    return;
+  }
+  fields.ocrStatus.textContent = "Texto analizado. He detectado un unico bloque; revisa los campos y pulsa Anadir entrenamiento.";
 }
 
 function calculateTotals(day = state) {
@@ -857,6 +1056,7 @@ $("#clear-day").addEventListener("click", () => {
 });
 
 $("#image-only-workout").addEventListener("click", estimateWorkoutFromImageOnly);
+fields.confirmWorkoutPreview.addEventListener("click", confirmWorkoutPreview);
 
 document.querySelectorAll(".nav-button").forEach((button) => {
   button.addEventListener("click", () => setScreen(button.dataset.screen));

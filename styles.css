@@ -492,12 +492,14 @@ button:hover {
   margin-top: 10px;
 }
 
-.food-preview.is-visible {
+.food-preview.is-visible,
+.workout-block-preview.is-visible {
   display: grid;
 }
 
 .preview-item,
-.preview-total {
+.preview-total,
+.workout-block {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
@@ -509,10 +511,33 @@ button:hover {
 }
 
 .preview-item span,
-.preview-total span {
+.preview-total span,
+.workout-block span {
   color: var(--muted);
   font-size: 0.78rem;
   font-weight: 800;
+}
+
+.workout-block-preview {
+  display: none;
+  grid-column: 1 / -1;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.workout-block {
+  grid-template-columns: 1fr;
+}
+
+.workout-block-controls {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.workout-block input,
+.workout-block select {
+  min-height: 34px;
 }
 
 .preview-total {
@@ -844,6 +869,10 @@ button:hover {
 
   .wide-field {
     grid-column: auto;
+  }
+
+  .workout-block-controls {
+    grid-template-columns: 1fr 1fr;
   }
 
   .score-grid,
