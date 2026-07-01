@@ -39,7 +39,7 @@ textarea {
   width: min(1380px, 100%);
   min-height: 100vh;
   margin: 0 auto;
-  padding: 16px 16px 86px;
+  padding: 16px 16px calc(74px + env(safe-area-inset-bottom));
 }
 
 .app-header {
@@ -740,18 +740,21 @@ button:hover {
 
 .bottom-nav {
   position: fixed;
-  right: max(12px, calc((100vw - 1380px) / 2 + 12px));
-  bottom: 12px;
-  left: max(12px, calc((100vw - 1380px) / 2 + 12px));
+  right: max(0px, calc((100vw - 1380px) / 2));
+  bottom: 0;
+  left: max(0px, calc((100vw - 1380px) / 2));
   z-index: 10;
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 6px;
-  padding: 6px;
+  gap: 4px;
+  padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
   border: 1px solid var(--line);
-  border-radius: 8px;
-  background: rgba(13, 20, 31, 0.92);
-  box-shadow: var(--shadow);
+  border-right: 0;
+  border-bottom: 0;
+  border-left: 0;
+  border-radius: 0;
+  background: rgba(8, 13, 20, 0.96);
+  box-shadow: 0 -12px 34px rgba(0, 0, 0, 0.28);
   backdrop-filter: blur(12px);
 }
 
@@ -799,7 +802,7 @@ button:hover {
 
 @media (max-width: 640px) {
   .mobile-app {
-    padding: 12px 12px 92px;
+    padding: 10px 10px calc(70px + env(safe-area-inset-bottom));
   }
 
   .app-header,

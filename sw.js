@@ -1,4 +1,4 @@
-const CACHE_NAME = "calorie-crossfit-v8";
+const CACHE_NAME = "calorie-crossfit-v9";
 const APP_ASSETS = [
   "./",
   "./index.html",
