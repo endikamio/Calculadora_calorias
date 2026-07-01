@@ -486,6 +486,14 @@ button:hover {
   margin-bottom: 4px;
 }
 
+.ocr-status {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
 .report-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

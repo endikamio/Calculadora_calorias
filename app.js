@@ -47,6 +47,7 @@ const state = {
   foods: [],
   workouts: [],
   selectedWorkoutImage: null,
+  workoutOcrText: "",
   activeScreen: "home"
 };
 
@@ -77,7 +78,8 @@ const fields = {
   workoutMinutes: $("#workout-minutes"),
   workoutCalories: $("#workout-calories"),
   workoutImage: $("#workout-image"),
-  workoutNotes: $("#workout-notes")
+  workoutNotes: $("#workout-notes"),
+  ocrStatus: $("#ocr-status")
 };
 
 function todayIso() {
@@ -207,6 +209,85 @@ function calculateWorkoutCalories() {
   fields.workoutEffortLabel.textContent = `RPE ${effort}/10`;
 }
 
+function normalizeText(text) {
+  return text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
+function inferSportFromText(text) {
+  const normalized = normalizeText(text);
+  const crossfitWords = ["wod", "amrap", "emom", "for time", "metcon", "burpee", "thruster", "wall ball", "toes to bar", "box jump", "pull up", "clean", "snatch", "rondas"];
+  if (crossfitWords.some((word) => normalized.includes(word))) return "crossfit";
+  if (/(running|run|correr|carrera|\d+\s?km)/.test(normalized)) return "running";
+  if (/(bike|bici|cycling|assault bike|echo bike)/.test(normalized)) return "cycling";
+  if (/(swim|natacion|nadar)/.test(normalized)) return "swimming";
+  if (/(walk|caminar|andar)/.test(normalized)) return "walking";
+  if (/(bench|squat|deadlift|press|fuerza|pesas|sentadilla|peso muerto)/.test(normalized)) return "strength";
+  if (/(padel|tenis|tennis)/.test(normalized)) return "padel";
+  if (/(futbol|football|soccer)/.test(normalized)) return "football";
+  return fields.workoutSport.value || "other";
+}
+
+function inferDurationFromText(text) {
+  const normalized = normalizeText(text);
+  const patterns = [
+    /(?:amrap|emom|time cap|cap)\s*(\d{1,3})/,
+    /(\d{1,3})\s*(?:min|minutos|')/,
+    /(\d{1,2}):(\d{2})/
+  ];
+
+  for (const pattern of patterns) {
+    const match = normalized.match(pattern);
+    if (!match) continue;
+    if (match[2]) return Number(match[1]) + Number(match[2]) / 60;
+    return Number(match[1]);
+  }
+
+  if (normalized.includes("for time")) return Math.max(workoutMinutes(), 30);
+  return workoutMinutes();
+}
+
+function inferEffortFromText(text, sport) {
+  const normalized = normalizeText(text);
+  const rpe = normalized.match(/rpe\s*(\d{1,2})/);
+  if (rpe) return Math.min(Math.max(Number(rpe[1]), 1), 10);
+  if (/(duro|hard|intenso|heavy|rx|for time|amrap|metcon|sprint)/.test(normalized)) return 8;
+  if (/(emom|moderado|tempo)/.test(normalized)) return 7;
+  if (/(suave|easy|tecnica|skill|movilidad)/.test(normalized)) return 4;
+  if (sport === "strength") return 6;
+  if (sport === "walking") return 3;
+  return Number(fields.workoutEffort.value) || 7;
+}
+
+function applyWorkoutTextInference(text) {
+  const sport = inferSportFromText(text);
+  const duration = inferDurationFromText(text);
+  const effort = inferEffortFromText(text, sport);
+
+  fields.workoutSport.value = sport;
+  fields.workoutMinutes.value = round(duration);
+  fields.workoutEffort.value = effort;
+  calculateWorkoutCalories();
+}
+
+async function readWorkoutImageText() {
+  if (!state.selectedWorkoutImage?.file) return "";
+  if (!window.Tesseract) {
+    fields.ocrStatus.textContent = "OCR no disponible: no se pudo cargar el lector de imagen.";
+    return "";
+  }
+
+  fields.ocrStatus.textContent = "Leyendo captura...";
+  const result = await Tesseract.recognize(state.selectedWorkoutImage.file, "spa+eng", {
+    logger: (progress) => {
+      if (progress.status === "recognizing text") {
+        fields.ocrStatus.textContent = `Leyendo captura... ${Math.round(progress.progress * 100)}%`;
+      }
+    }
+  });
+  state.workoutOcrText = result.data.text.trim();
+  return state.workoutOcrText;
+}
+
 function bodyWeight() {
   return Number(fields.bodyWeight.value) || state.profile.weight || 75;
 }
@@ -244,11 +325,30 @@ function addWorkout() {
   render();
 }
 
-function estimateWorkoutFromImageOnly() {
+async function estimateWorkoutFromImageOnly() {
   const hasText = Boolean(fields.workoutNotes.value.trim());
   if (!state.selectedWorkoutImage && !hasText) {
     fields.workoutImage.click();
     return;
+  }
+
+  if (state.selectedWorkoutImage) {
+    try {
+      const text = await readWorkoutImageText();
+      if (text) {
+        const combinedText = [fields.workoutNotes.value.trim(), text].filter(Boolean).join("\n\n");
+        fields.workoutNotes.value = combinedText;
+        applyWorkoutTextInference(combinedText);
+        fields.ocrStatus.textContent = "Captura leida. He ajustado deporte, duracion, esfuerzo y calorias si he detectado datos utiles.";
+      } else {
+        fields.ocrStatus.textContent = "No he podido leer texto claro en la captura. Uso deporte, duracion y esfuerzo manuales.";
+      }
+    } catch (error) {
+      fields.ocrStatus.textContent = "No he podido leer la captura. Uso deporte, duracion y esfuerzo manuales.";
+    }
+  } else if (hasText) {
+    applyWorkoutTextInference(fields.workoutNotes.value);
+    fields.ocrStatus.textContent = "Texto analizado. He ajustado la estimacion con lo detectado.";
   }
 
   fields.workoutMinutes.value = workoutMinutes();
@@ -500,6 +600,7 @@ function setScreen(screenName) {
 function clearWorkoutImage() {
   if (state.selectedWorkoutImage?.url) URL.revokeObjectURL(state.selectedWorkoutImage.url);
   state.selectedWorkoutImage = null;
+  state.workoutOcrText = "";
   fields.workoutImage.value = "";
   renderWorkoutPreview();
 }
@@ -617,8 +718,11 @@ fields.workoutImage.addEventListener("change", () => {
 
   state.selectedWorkoutImage = {
     name: file.name,
-    url: URL.createObjectURL(file)
+    url: URL.createObjectURL(file),
+    file
   };
+  state.workoutOcrText = "";
+  fields.ocrStatus.textContent = "Captura lista. Pulsa Estimar con captura/texto para leerla.";
   fields.workoutMinutes.value = workoutMinutes();
   calculateWorkoutCalories();
   renderWorkoutPreview();
