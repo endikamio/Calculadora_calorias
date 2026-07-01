@@ -209,6 +209,13 @@ function calculateWorkoutCalories() {
   fields.workoutEffortLabel.textContent = `RPE ${effort}/10`;
 }
 
+function calculateWorkoutCaloriesFrom({ sportKey, effort, minutes }) {
+  const sport = sportProfiles[sportKey] || sportProfiles.other;
+  const weight = bodyWeight();
+  const effortFactor = 0.65 + effort * 0.07;
+  return round(sport.baseMet * effortFactor * 3.5 * weight / 200 * minutes);
+}
+
 function normalizeText(text) {
   return text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
@@ -230,7 +237,7 @@ function inferSportFromText(text) {
 function inferDurationFromText(text) {
   const normalized = normalizeText(text);
   const patterns = [
-    /(?:amrap|emom|time cap|cap)\s*(\d{1,3})/,
+    /(?:amrap|emom|time cap|cap|duracion|duration)\s*(?:de\s*)?(\d{1,3})/,
     /(\d{1,3})\s*(?:min|minutos|')/,
     /(\d{1,2}):(\d{2})/
   ];
@@ -242,8 +249,7 @@ function inferDurationFromText(text) {
     return Number(match[1]);
   }
 
-  if (normalized.includes("for time")) return Math.max(workoutMinutes(), 30);
-  return workoutMinutes();
+  return null;
 }
 
 function inferEffortFromText(text, sport) {
@@ -262,11 +268,14 @@ function applyWorkoutTextInference(text) {
   const sport = inferSportFromText(text);
   const duration = inferDurationFromText(text);
   const effort = inferEffortFromText(text, sport);
+  if (!duration) return { ok: false, reason: "missing_duration", sport, effort };
 
   fields.workoutSport.value = sport;
   fields.workoutMinutes.value = round(duration);
   fields.workoutEffort.value = effort;
-  calculateWorkoutCalories();
+  fields.workoutCalories.value = calculateWorkoutCaloriesFrom({ sportKey: sport, effort, minutes: duration });
+  fields.workoutEffortLabel.textContent = `RPE ${effort}/10`;
+  return { ok: true, sport, effort, duration };
 }
 
 async function readWorkoutImageText() {
@@ -293,7 +302,7 @@ function bodyWeight() {
 }
 
 function workoutMinutes() {
-  return Number(fields.workoutMinutes.value) || 45;
+  return Number(fields.workoutMinutes.value) || 0;
 }
 
 function addFood(entry) {
@@ -309,6 +318,11 @@ function addWorkout() {
   const calories = Number(fields.workoutCalories.value) || 0;
   const imageName = state.selectedWorkoutImage?.name || "";
   const notes = fields.workoutNotes.value.trim();
+
+  if (!minutes || !calories) {
+    fields.ocrStatus.textContent = "Falta duracion o calorias. Usa una captura/texto con tiempo detectable o rellena la duracion manualmente.";
+    return;
+  }
 
   state.workouts.push({
     id: crypto.randomUUID(),
@@ -338,21 +352,29 @@ async function estimateWorkoutFromImageOnly() {
       if (text) {
         const combinedText = [fields.workoutNotes.value.trim(), text].filter(Boolean).join("\n\n");
         fields.workoutNotes.value = combinedText;
-        applyWorkoutTextInference(combinedText);
-        fields.ocrStatus.textContent = "Captura leida. He ajustado deporte, duracion, esfuerzo y calorias si he detectado datos utiles.";
+        const inference = applyWorkoutTextInference(combinedText);
+        if (!inference.ok) {
+          fields.ocrStatus.textContent = "He leido la captura, pero no he detectado una duracion. Escribe el tiempo en el texto o rellena Duracion manualmente.";
+          return;
+        }
+        fields.ocrStatus.textContent = "Captura leida. He usado solo los datos detectados en la captura/texto.";
       } else {
-        fields.ocrStatus.textContent = "No he podido leer texto claro en la captura. Uso deporte, duracion y esfuerzo manuales.";
+        fields.ocrStatus.textContent = "No he podido leer texto claro en la captura. No hago estimacion automatica sin duracion detectada.";
+        return;
       }
     } catch (error) {
-      fields.ocrStatus.textContent = "No he podido leer la captura. Uso deporte, duracion y esfuerzo manuales.";
+      fields.ocrStatus.textContent = "No he podido leer la captura. No hago estimacion automatica sin texto detectable.";
+      return;
     }
   } else if (hasText) {
-    applyWorkoutTextInference(fields.workoutNotes.value);
-    fields.ocrStatus.textContent = "Texto analizado. He ajustado la estimacion con lo detectado.";
+    const inference = applyWorkoutTextInference(fields.workoutNotes.value);
+    if (!inference.ok) {
+      fields.ocrStatus.textContent = "No he detectado duracion en el texto. Escribe algo como '45 min', 'AMRAP 20' o '32:15'.";
+      return;
+    }
+    fields.ocrStatus.textContent = "Texto analizado. He usado el tiempo detectado en el texto.";
   }
 
-  fields.workoutMinutes.value = workoutMinutes();
-  calculateWorkoutCalories();
   fields.workoutNotes.value = fields.workoutNotes.value.trim() || "Estimacion automatica desde captura/texto libre.";
   addWorkout();
   fields.workoutNotes.value = "";
@@ -723,8 +745,6 @@ fields.workoutImage.addEventListener("change", () => {
   };
   state.workoutOcrText = "";
   fields.ocrStatus.textContent = "Captura lista. Pulsa Estimar con captura/texto para leerla.";
-  fields.workoutMinutes.value = workoutMinutes();
-  calculateWorkoutCalories();
   renderWorkoutPreview();
 });
 
